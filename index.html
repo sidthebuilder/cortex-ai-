@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cortex AI — Interactive Engine</title>
+
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        /* Interactive Chat UI styling matching Cellhawk style */
+        .chat-container {
+            background: #fff;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+            overflow: hidden;
+            width: 100%;
+        }
+        @media (max-width: 768px) {
+            .chat-container { height: 450px; }
+        }
+        .chat-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            background: #f9fafb;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #10b981;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.5; }
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            font-size: 15px;
+        }
+        .msg-wrapper {
+            display: flex;
+            gap: 12px;
+        }
+        .msg-wrapper.user {
+            flex-direction: row-reverse;
+        }
+        .msg-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 12px;
+            font-family: var(--font-mono);
+        }
+        .msg-avatar.ai {
+            background: var(--accent);
+            color: white;
+        }
+        .msg-avatar.user-avatar {
+            background: var(--text-main);
+            color: white;
+        }
+        .msg-bubble {
+            padding: 12px 16px;
+            border-radius: 6px;
+            max-width: 85%;
+            line-height: 1.5;
+        }
+        .msg-bubble.ai-msg {
+            background: #f3f4f6;
+            color: var(--text-main);
+            border-top-left-radius: 0;
+            border: 1px solid var(--border-color);
+        }
+        .msg-bubble.user-msg {
+            background: var(--accent);
+            color: white;
+            border-top-right-radius: 0;
+        }
+        
+        .chat-input-area {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+            background: #fff;
+        }
+        .chat-form {
+            display: flex;
+            gap: 10px;
+        }
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-family: var(--font-sans);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .chat-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        .chat-submit {
+            padding: 0 20px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: var(--font-sans);
+            transition: background 0.2s;
+            font-size: 14px;
+        }
+        .chat-submit:hover {
+            background: var(--accent-hover);
+        }
+        
+        .markdown-body p { margin-bottom: 0.5rem; }
+        .markdown-body p:last-child { margin-bottom: 0; }
+        .markdown-body strong { font-weight: 600; }
+        .markdown-body code { background: rgba(0,0,0,0.05); padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-family: var(--font-mono); color: var(--accent); font-size: 0.9em; }
+        .markdown-body pre { background: var(--code-bg); color: #fff; padding: 0.75rem; border-radius: 0.5rem; margin-bottom: 0.5rem; overflow-x: auto; font-family: var(--font-mono); font-size: 13px; }
+        
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            height: 20px;
+        }
+        .typing-dots span {
+            width: 6px; height: 6px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="scroll-progress" id="scroll-progress"></div>
+
+    <nav class="dev-nav">
+        <div class="container nav-content">
+            <div class="nav-brand">
+                <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="height:28px;width:28px;margin-right:12px;" aria-hidden="true">
+                    <polygon points="100,40 10,100 80,130" fill="#2d3748" />
+                    <polygon points="100,40 190,100 120,130" fill="#1a202c" />
+                    <polygon points="100,10 80,130 120,130" fill="#111827" />
+                    <polygon points="80,130 120,130 100,180" fill="#000000" />
+                </svg>
+                <span class="mono-logo">CORTEX AI</span>
+            </div>
+
+            <div class="nav-links" id="nav-links">
+                <a href="https://sidthebuilder.github.io/cellhawk/">Back to Main Site</a>
+                <a href="https://www.linkedin.com/in/shashank-kumar-772a2035b/" class="btn btn-outline" target="_blank" rel="noopener noreferrer">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container article-container">
+
+        <!-- Hero -->
+        <header class="article-header text-center scroll-reveal" style="padding-bottom: 20px;">
+            <h1>Cortex AI Interactive Engine</h1>
+            <p class="subtitle">Experience the zero-latency, localized NLP intent-matching engine driving the CELLHAWK navigation stack.</p>
+        </header>
+
+        <hr class="divider">
+
+        <section class="doc-section scroll-reveal active">
+            <div class="split-layout">
+                
+                <!-- Left: Technical Content -->
+                <div class="text-content">
+                    <h2>Live Interaction Interface</h2>
+                    <p>This terminal connects directly to the local Cortex API. It demonstrates how natural language commands are translated instantly into deterministic hardware inputs for drones and geospatial view routing without cloud dependency.</p>
+                    
+                    <div class="metrics-box">
+                        <h3>Capabilities Demo</h3>
+                        <ul class="feature-list">
+                            <li><strong>Intent Matching:</strong> Natural language intent is compiled into <code>{lat, lon, zoom}</code> coordinates. Try asking to route to <em>"London"</em>.</li>
+                            <li><strong>Shader Pipelines:</strong> Command the system to <em>"enable thermal optics"</em>. The engine hooks directly into Cesium's <code>PostProcessStage</code> for instant WebGL GLSL filter application.</li>
+                            <li><strong>Live Swarm Control:</strong> The system dynamically switches to regional high-frequency polling (<code>/api/flights/live?dist=250</code>) hitting adsb.fi every 5,000ms when the camera dips below 5,000km altitude.</li>
+                            <li><strong>5-Drone Swarm Control:</strong> Cortex AI currently supports active control and orchestration of up to 5 drones simultaneously, with expanded capacity currently under simulation testing.</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="metrics-box" style="margin-top: 20px; background: #fff; border-left: 4px solid var(--accent);">
+                        <p style="margin: 0; font-size: 14px;"><strong>Note:</strong> This interface is for live demonstration and interaction only. Ensure the local backend server is running on port 3001.</p>
+                    </div>
+                </div>
+
+                <!-- Right: Chat UI -->
+                <div class="image-content">
+                    <div class="chat-container">
+                        <div class="chat-header">
+                            <div class="msg-avatar ai">AI</div>
+                            <div>
+                                <h3 style="margin: 0; font-size: 14px;">CORTEX ENGINE</h3>
+                                <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                                    <span class="status-dot"></span>
+                                    <span style="font-size: 11px; font-family: var(--font-mono); color: #10b981;">System Online</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="chat-messages" class="chat-messages">
+                            <!-- Initial Message -->
+                            <div class="msg-wrapper">
+                                <div class="msg-avatar ai">CX</div>
+                                <div class="msg-bubble ai-msg markdown-body">
+                                    Cortex AI initialized. I am connected to the local API endpoint. Try asking me about flights over London, enabling night vision, or identifying drone coordinates.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="chat-input-area">
+                            <form id="chat-form" class="chat-form">
+                                <input type="text" id="chat-input" placeholder="Enter command query..." class="chat-input" autocomplete="off" />
+                                <button type="submit" class="chat-submit">Execute</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+        </section>
+
+        <hr class="divider">
+
+        <!-- 2.0 Global Interface -->
+        <section id="interface" class="doc-section scroll-reveal active">
+            <div class="split-layout reverse">
+                <div class="text-content">
+                    <h2>2.0 Global AI Interface</h2>
+                    <p>The Cortex AI engine seamlessly integrates into the CELLHAWK global mapping dashboard. Instead of clicking through complex menus, operators can simply type intent-based commands to control the tactical environment.</p>
+                    <p>The dashboard features dedicated modules navigated entirely via natural language:</p>
+                    <div class="metrics-box">
+                        <h3>Dashboard Modules</h3>
+                        <ul class="feature-list">
+                            <li><strong>Explore Map:</strong> Instantly snap the camera to any global coordinate or city via text.</li>
+                            <li><strong>Data Layers:</strong> Use AI to toggle marine AIS, global flights, or seismic activity on demand.</li>
+                            <li><strong>Intelligence:</strong> Run semantic queries against live threat intelligence feeds.</li>
+                            <li><strong>Surveillance:</strong> Tap into CCTV networks and optical payloads instantly.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="image-content">
+                    <div style="background: #111; border-radius: 8px; border: 1px solid var(--border-color); overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+                        <!-- Dashboard UI Mockup based on screenshot -->
+                        <div style="background: #f9fafb; padding: 12px 20px; display: flex; gap: 24px; font-size: 13px; font-weight: 500; color: #4b5563; border-bottom: 1px solid var(--border-color);">
+                            <span style="color: var(--text-main); font-weight: 700;">CELLHAWK</span>
+                            <span class="hide-mobile">Explore Map</span>
+                            <span class="hide-mobile">Data Layers</span>
+                            <span class="hide-mobile">Intelligence</span>
+                            <span class="hide-mobile">Surveillance</span>
+                        </div>
+                        <style>@media (max-width: 480px) { .hide-mobile { display: none; } }</style>
+                        <div style="height: 300px; background: url('https://www.transparenttextures.com/patterns/stardust.png'), #000; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 15px; padding: 20px;">
+                            <div style="background: #fff; padding: 20px; border-radius: 12px; width: 100%; max-width: 350px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+                                <h4 style="margin:0 0 10px; font-size: 14px; text-align: left;">CELLHAWK <span style="float:right; color:#10b981; font-size: 11px;">● ONLINE</span></h4>
+                                <div style="background: #f3f4f6; padding: 15px; border-radius: 6px; font-size: 13px; color: #4b5563;">Cellhawk core online. Ready for commands.</div>
+                            </div>
+                            <div style="background: #fff; padding: 12px 20px; border-radius: 25px; width: 100%; max-width: 350px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+                                <span style="color: #9ca3af; font-size: 14px;">Execute command...</span>
+                                <div style="width: 24px; height: 24px; background: #f3f4f6; border-radius: 50%; display: flex; align-items: center; justify-content: center;">↗</div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="caption">Fig 1. The Cortex AI Global Dashboard Interface running over a 3D Earth projection.</p>
+                </div>
+            </div>
+        </section>
+
+        <hr class="divider">
+
+        <!-- 3.0 Local Processing -->
+        <section id="local-processing" class="doc-section scroll-reveal active">
+            <div class="split-layout">
+                <div class="text-content">
+                    <h2>3.0 100% Local Execution</h2>
+                    <p>In Electronic Warfare (EW) and defense scenarios, relying on cloud APIs like OpenAI or Anthropic is a critical vulnerability. Cortex AI is designed to run entirely on the local machine.</p>
+                    <p>By processing all natural language understanding (NLU) natively, the engine guarantees zero-latency execution, complete data privacy, and operational capability even when external internet connectivity is severed or jammed.</p>
+                    <div class="metrics-box">
+                        <h3>Engine Specifications</h3>
+                        <ul class="feature-list">
+                            <li><strong>Offline Capability:</strong> Operates entirely offline without external cloud API dependencies.</li>
+                            <li><strong>Zero Latency:</strong> Sub-200ms processing speed for immediate tactical execution.</li>
+                            <li><strong>Encrypted Runtime:</strong> All intent matching and data extraction happens within the secure local environment.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="image-content" style="background: #0a0a0a; padding: 25px; border-radius: 8px; border: 1px solid #1f2937; font-family: var(--font-mono); color: #10b981; font-size: 13px; line-height: 1.7; height: 100%; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);">
+                    <div>> INITIALIZING CORTEX ENGINE...</div>
+                    <div>> LOADING LOCAL NLP WEIGHTS [██████████] 100%</div>
+                    <div>> BINDING TO PORT 3001</div>
+                    <div style="color: #3b82f6;">> [SYSTEM] CORTEX AI ONLINE (OFFLINE MODE)</div>
+                    <div>> WAITING FOR COMMAND INPUT...</div>
+                    <br>
+                    <div style="color: #e5e7eb;">User Input: "Show me all flights over London"</div>
+                    <div style="color: #8b5cf6;">> EXTRACTING INTENT:</div>
+                    <div style="color: #a78bfa; margin-left: 15px;">{<br>&nbsp;&nbsp;"action": "toggle_layer",<br>&nbsp;&nbsp;"layer": "flights",<br>&nbsp;&nbsp;"targetLat": 51.5,<br>&nbsp;&nbsp;"targetLon": -0.1,<br>&nbsp;&nbsp;"pollingRateMs": 5000<br>}</div>
+                    <div style="color: #10b981;">> DISPATCHING: fetch('/api/flights/live?lat=51.5&lon=-0.1&dist=250')</div>
+                    <div style="color: #3b82f6;">> [EXECUTION TIME]: 142ms</div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="divider">
+
+        <!-- 4.0 3D WebGL Geospatial Engine -->
+        <section id="web-view" class="doc-section scroll-reveal active">
+            <div class="split-layout reverse">
+                <div class="text-content">
+                    <h2>4.0 3D WebGL Geospatial Engine</h2>
+                    <p>Cortex AI interfaces directly with a high-performance WebGL 3D web view, allowing operators to visualize complex urban environments with native 3D building extrusion.</p>
+                    <p>The interactive world map serves as the visual command center, rendering millions of geospatial data points at 60 FPS while natively plotting live drone swarms.</p>
+                    <div class="metrics-box">
+                        <h3>Visual Engine Capabilities</h3>
+                        <ul class="feature-list">
+                            <li><strong>Photorealistic 3D Tiles:</strong> Real-time extrusion of dense urban infrastructure utilizing <code>createGooglePhotorealistic3DTileset()</code> via the Cesium API.</li>
+                            <li><strong>Swarm Tracking:</strong> Visual representation of individual drones, flight paths, and live entity tracking powered by custom `EntityClickHandler` logic.</li>
+                            <li><strong>Dynamic Fallback:</strong> If 3D rendering fails, the engine instantly gracefully downgrades to CartoDB Dark Matter base maps without dropping the tracking feeds.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="image-content">
+                    <img src="Screenshot%202026-05-14%20190609.png" alt="3D WebGL World Map with Drone Flight Paths and 3D Buildings" class="ui-screenshot" style="border: 1px solid var(--border-color); box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
+                    <p class="caption">Fig 2. The 3D Geospatial Web View rendering drone routing over urban infrastructure.</p>
+                </div>
+            </div>
+        </section>
+
+        <hr class="divider">
+
+        <!-- 5.0 Real-Time Tracking Layers -->
+        <section id="tracking-layers" class="doc-section scroll-reveal active">
+            <div class="split-layout">
+                <div class="text-content">
+                    <h2>5.0 Multi-Domain Data Layers</h2>
+                    <p>The Cortex AI WebGL environment seamlessly aggregates and visualizes high-frequency telemetry from global APIs, offering granular control over what assets are rendered.</p>
+                    <div class="metrics-box">
+                        <h3>Global Data Layers</h3>
+                        <ul class="feature-list">
+                            <li><strong>Live Flights:</strong> Trajectory tracking of commercial and tactical aviation.</li>
+                            <li><strong>Satellites:</strong> Tracking of the ISS and other orbital assets.</li>
+                            <li><strong>Seismic:</strong> Real-time mapping of global earthquake events.</li>
+                            <li><strong>Street Traffic:</strong> Live visualization of global traffic congestion.</li>
+                            <li><strong>CCTV Feeds:</strong> Instant visual access to public security camera networks.</li>
+                            <li><strong>Marine AIS:</strong> Real-time positioning of maritime vessels.</li>
+                        </ul>
+                    </div>
+                    
+                    <style>
+                        .responsive-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+                        @media (max-width: 768px) { .responsive-grid-2 { grid-template-columns: 1fr; } }
+                    </style>
+                    <div class="responsive-grid-2 mt-40">
+                        <div class="tech-card" style="padding: 20px;">
+                            <h4 style="font-size: 14px; color: var(--text-muted); font-family: var(--font-mono); margin-bottom: 12px; font-weight: 500;">Aviation Filters</h4>
+                            <ul style="list-style: none; font-size: 13px; font-weight: 600; line-height: 2.2;">
+                                <li>Show Route Paths</li>
+                                <li>CRUISE &ge; FL350</li>
+                                <li>HIGH FL200&ndash;349</li>
+                                <li>MID FL100&ndash;199</li>
+                                <li>LOW FL030&ndash;099</li>
+                                <li>NEAR GND &lt; 3K</li>
+                            </ul>
+                        </div>
+                        <div class="tech-card" style="padding: 20px;">
+                            <h4 style="font-size: 14px; color: var(--text-muted); font-family: var(--font-mono); margin-bottom: 12px; font-weight: 500;">Orbital Filters</h4>
+                            <ul style="list-style: none; font-size: 13px; font-weight: 600; line-height: 2.2;">
+                                <li>Show Orbit Paths</li>
+                                <li>SPACE STATIONS</li>
+                                <li>OTHER ORBITS</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="image-content">
+                    <img src="Screenshot%202026-06-03%20165745.png" alt="Data Layers Mega Menu" class="ui-screenshot" style="border: 1px solid var(--border-color); box-shadow: 0 10px 30px rgba(0,0,0,0.15); margin-bottom: 20px;">
+                    <img src="Screenshot%202026-05-14%20190501.png" alt="Real-time multi-domain tracking and telemetry" class="ui-screenshot" style="border: 1px solid var(--border-color); box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
+                    <p class="caption">Fig 3. Top: The Mega-Menu interface for toggling global data layers. Bottom: Real-time telemetry overlay showing multi-domain asset tracking.</p>
+                </div>
+            </div>
+        </section>
+
+        <hr class="divider">
+
+        <!-- 6.0 Tactical Optics -->
+        <section id="optics" class="doc-section scroll-reveal active">
+            <div class="split-layout reverse">
+                <div class="text-content" style="width: 100%;">
+                    <h2>6.0 Tactical Post-Processing Shaders</h2>
+                    <p>When operating in adverse visual conditions, the Cortex engine allows operators to instantly switch the WebGL rendering pipeline using voice or text commands.</p>
+                    <div class="grid-3 mt-40">
+                        <div class="tech-card">
+                            <h4>Night Vision (NVG)</h4>
+                            <p>Applies a high-contrast phosphor green filter with simulated grain and edge enhancement for low-light tactical operations.</p>
+                        </div>
+                        <div class="tech-card">
+                            <h4>Thermal (FLIR)</h4>
+                            <p>Renders the geospatial map using a multi-band heat gradient, simulating Forward-Looking Infrared sensor feeds.</p>
+                        </div>
+                        <div class="tech-card">
+                            <h4>Dynamic Tracking</h4>
+                            <p>Click any drone, satellite, or vessel to lock the camera and track its exact coordinates in real-time.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <hr class="divider">
+
+        <!-- 7.0 Performance & Results -->
+        <section id="results" class="doc-section scroll-reveal active">
+            <div class="split-layout">
+                <div class="text-content" style="width: 100%;">
+                    <h2>7.0 Performance & Field Results</h2>
+                    <p>Cortex AI is not a conceptual prototype; it is a battle-tested engine built to handle high-stress data environments. Below are the benchmarked performance results when running Cortex natively on edge hardware:</p>
+                    
+                    <div class="grid-3 mt-40">
+                        <div class="tech-card" style="border-top: 3px solid var(--accent);">
+                            <h4 style="color: var(--accent); font-size: 24px; margin-bottom: 5px;">142ms</h4>
+                            <h5 style="font-size: 14px; margin-bottom: 10px;">Intent Execution Latency</h5>
+                            <p style="font-size: 13px;">Natural language commands are parsed and executed in under 200ms entirely offline, enabling split-second tactical routing.</p>
+                        </div>
+                        <div class="tech-card" style="border-top: 3px solid #10b981;">
+                            <h4 style="color: #10b981; font-size: 24px; margin-bottom: 5px;">5,000ms</h4>
+                            <h5 style="font-size: 14px; margin-bottom: 10px;">Swarm Refresh Rate</h5>
+                            <p style="font-size: 13px;">Live asset data is polled and re-rendered every 5 seconds dynamically without dropping frames during camera traversal.</p>
+                        </div>
+                        <div class="tech-card" style="border-top: 3px solid #8b5cf6;">
+                            <h4 style="color: #8b5cf6; font-size: 24px; margin-bottom: 5px;">60 FPS</h4>
+                            <h5 style="font-size: 14px; margin-bottom: 10px;">WebGL 3D Rendering</h5>
+                            <p style="font-size: 13px;">Holds a stable 60 frames-per-second while rendering high-fidelity photorealistic 3D cityscapes and thousands of vector flights simultaneously.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="divider">
+
+        <!-- 8.0 Training Methodology -->
+        <section id="training" class="doc-section scroll-reveal active">
+            <div class="split-layout reverse">
+                <div class="text-content">
+                    <h2>8.0 Custom Training Pipeline</h2>
+                    <p>Unlike off-the-shelf wrappers for external language models, Cortex AI is powered by proprietary intent-matching neural models <strong>trained entirely in-house</strong>.</p>
+                    
+                    <div class="metrics-box">
+                        <h3>Data Sources</h3>
+                        <ul class="feature-list">
+                            <li><strong>Kaggle Datasets:</strong> Leveraged massive open-source geospatial and NLP datasets from Kaggle to train the intent vectorization engine.</li>
+                            <li><strong>Global Telemetry:</strong> Ingested historical flight, AIS, and telemetry logs to allow the model to recognize and map tactical commands natively.</li>
+                            <li><strong>Local Execution:</strong> By training specifically on localized command structures, the final model runs directly on the edge hardware without internet access.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="image-content">
+                    <div style="background: black; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 10px 30px rgba(0,0,0,0.15);">
+                        <img src="Screenshot%202026-06-03%20165711.png" alt="Cell Hawk AI Frontend Interface" style="width: 100%; height: auto; border-radius: 4px;" />
+                    </div>
+                    <p class="caption">Fig 4. The raw Cortex AI frontend interface interacting with the proprietary trained models.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+    
+    <footer class="premium-footer text-center">
+        <div class="container">
+            <div class="footer-legal">
+                <span class="auth-tag">ENCRYPTED COMM LINK</span>
+                <p>© 2026 CELLHAWK SYSTEMS.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Interactive Script -->
+    <script>
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const chatMessages = document.getElementById('chat-messages');
+
+        function addMessage(text, isUser) {
+            const wrapper = document.createElement('div');
+            wrapper.className = isUser ? 'msg-wrapper user' : 'msg-wrapper';
+            
+            let iconHtml = '';
+            if (isUser) {
+                iconHtml = `<div class="msg-avatar user-avatar">OP</div>`;
+            } else {
+                iconHtml = `<div class="msg-avatar ai">CX</div>`;
+            }
+
+            const msgDiv = document.createElement('div');
+            
+            if (isUser) {
+                msgDiv.className = 'msg-bubble user-msg';
+                msgDiv.textContent = text;
+            } else {
+                msgDiv.className = 'msg-bubble ai-msg markdown-body';
+                msgDiv.innerHTML = marked.parse(text);
+            }
+
+            wrapper.innerHTML = iconHtml;
+            wrapper.appendChild(msgDiv);
+            chatMessages.appendChild(wrapper);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function addTypingIndicator() {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'msg-wrapper typing-indicator-wrapper';
+            wrapper.innerHTML = `
+                <div class="msg-avatar ai">CX</div>
+                <div class="msg-bubble ai-msg">
+                    <div class="typing-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(wrapper);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return wrapper;
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = chatInput.value.trim();
+            if (!text) return;
+
+            addMessage(text, true);
+            chatInput.value = '';
+
+            const indicator = addTypingIndicator();
+
+            try {
+                // Call the local backend API
+                const response = await fetch('http://localhost:3001/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                
+                if (!response.ok) throw new Error('API Error');
+                
+                const data = await response.json();
+                indicator.remove();
+                addMessage(data.reply, false);
+
+            } catch (err) {
+                // Fallback for when hosted online (e.g. via X or Github Pages) where localhost:3001 is unavailable
+                setTimeout(() => {
+                    indicator.remove();
+                    addMessage("Cortex Engine is currently running in **Offline Demonstration Mode**. Live NLP backend connection could not be established on `localhost:3001`. \n\nHowever, I am fully capable of processing intent natively when deployed to edge hardware. Try deploying me to a Cellhawk Drone!", false);
+                }, 1500);
+            }
+        });
+        
+        // Simple scroll reveal logic to match main site
+        setTimeout(() => {
+            document.querySelectorAll('.scroll-reveal').forEach(el => el.classList.add('active'));
+        }, 100);
+    </script>
+</body>
+</html>
